@@ -139,6 +139,22 @@ def process_dataframe(df, manual_discount, is_biweekly):
         
     return pd.DataFrame(processed_records)
 
+def compute_deltas(df_curr, df_prev, payment_cols):
+    """Safely handles delta computation in a flat structure isolated from UI code"""
+    delta_df = pd.merge(df_curr, df_prev, on=["Car Model", "Trim"], suffixes=('_curr', '_prev'))
+    if delta_df.empty:
+        return pd.DataFrame()
+        
+    df_deltas = pd.DataFrame()
+    df_deltas["Car Model"] = delta_df["Car Model"]
+    df_deltas["Trim"] = delta_df["Trim"]
+    df_deltas["Δ MSRP"] = delta_df["MSRP_curr"] - delta_df["MSRP_prev"]
+    
+    for col in payment_cols:
+        df_deltas[f"Δ {col}"] = delta_df[f"{col}_curr"] - delta_df[f"{col}_prev"]
+        
+    return df_deltas
+
 # --- Sidebar Controls ---
 st.sidebar.header("🎛️ Dashboard Controls")
 manual_discount = st.sidebar.number_input("Apply Additional Manual Discount ($)", min_value=0.0, value=0.0, step=100.0)
@@ -187,30 +203,15 @@ if current_file is not None:
             
             if df_prev_cleaned is not None and not df_prev_cleaned.empty:
                 df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
+                df_deltas = compute_deltas(df_current_display, df_prev_calculated, payment_cols)
                 
-                df_prev_filtered = df_prev_calculated[df_prev_calculated['Car Model'].isin(df_current_display['Car Model'])]
-                if selected_model != "All Models":
-                    df_prev_filtered = df_prev_filtered[df_prev_filtered["Car Model"] == selected_model]
-                
-                delta_df = pd.merge(
-                    df_current_display, 
-                    df_prev_filtered, 
-                    on=["Car Model", "Trim"], 
-                    suffixes=('_curr', '_prev')
-                )
-                
-                if not delta_df.empty:
-                    df_deltas = pd.DataFrame()
-                    df_deltas["Car Model"] = delta_df["Car Model"]
-                    df_deltas["Trim"] = delta_df["Trim"]
-                    df_deltas["Δ MSRP"] = delta_df["MSRP_curr"] - delta_df["MSRP_prev"]
-                    
-                    for col in payment_cols:
-                        df_deltas[f"Δ {col}"] = delta_df[f"{col}_curr"] - delta_df[f"{col}_prev"]
-                        
+                if not df_deltas.empty:
                     delta_config = {col: st.column_config.NumberColumn(format="$%.2f") for col in df_deltas.columns if col not in ["Car Model", "Trim"]}
                     st.caption(f"💡 Deltas reflect variance using the {frequency} payment structure conversion method.")
                     st.dataframe(df_deltas, column_config=delta_config, use_container_width=True)
                 else:
                     st.warning("⚠️ No matching rows found between the two files for the current filter criteria.")
         else:
+            st.warning("💡 Drop your older sheet into the **'Upload Previous Month Excel File'** sidebar menu item to populate the program differences down here.")
+else:
+    st.info("👋 System ready. Please upload your **Current Program File** to load calculations.")
