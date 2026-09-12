@@ -65,28 +65,22 @@ def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, res
 def clean_and_parse_file(uploaded_file):
     """Safely extracts columns A through R and applies safe type casting"""
     try:
-        # Load raw data safely without relying on spreadsheet header names
         df_raw = pd.read_excel(uploaded_file, header=None)
         
-        # Ensure we possess at least up to column R (18 columns wide)
         if df_raw.shape[1] < 18:
             st.error(f"❌ Uploaded file must have at least 18 columns (A through R). Found only {df_raw.shape[1]} columns.")
             return None
             
-        # Select exactly the first 18 columns and assign our standard keys
         df = df_raw.iloc[:, :18].copy()
         df.columns = [COLUMN_MAPPING[i] for i in range(18)]
         
-        # Strip header row if present in column A
         first_row_val = str(df.iloc[0, 0]).strip().lower()
         if "car" in first_row_val or "model" in first_row_val:
             df = df.iloc[1:].reset_index(drop=True)
             
-        # Clean string definitions
         df['Car Model'] = df['Car Model'].astype(str).str.strip()
         df['Trim'] = df['Trim'].astype(str).str.strip()
         
-        # Convert financial numbers cleanly, coercing errors to 0.0
         numeric_cols = [
             'MSRP', 'Cash Discount', 'Fin 24mo Rate', 'Fin 36mo Rate', 'Fin 48mo Rate', 
             'Fin 60mo Rate', 'Fin 72mo Rate', 'Fin 84mo Rate', 'Finance Discount', 
@@ -113,7 +107,6 @@ def process_dataframe(df, manual_discount):
         fin_disc = row['Finance Discount']
         lease_disc = row['Lease Discount']
         
-        # Calculate Finance Matrix
         f24 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 24mo Rate'], 24)
         f36 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 36mo Rate'], 36)
         f48 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 48mo Rate'], 48)
@@ -121,7 +114,6 @@ def process_dataframe(df, manual_discount):
         f72 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 72mo Rate'], 72)
         f84 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 84mo Rate'], 84)
         
-        # Calculate Lease Matrix
         l36 = calculate_lease_payment(msrp, lease_disc, manual_discount, row['Lease 36mo Rate'], row['Lease 36mo Residual'], 36)
         l48 = calculate_lease_payment(msrp, lease_disc, manual_discount, row['Lease 48mo Rate'], row['Lease 48mo Residual'], 48)
         l60 = calculate_lease_payment(msrp, lease_disc, manual_discount, row['Lease 60mo Rate'], row['Lease 60mo Residual'], 60)
@@ -156,11 +148,12 @@ if current_file is not None:
         
         # Section 1: Active Program Calculations
         st.header("📊 Section 1: Current Program Calculations")
-        currency_cols = [c for c in df_current_calculated.columns if c not in ["Car Model", "Trim"]]
-        format_dict = {col: "${:,.2f}" for col in currency_cols}
-        st.dataframe(df_current_calculated.style.format(format_dict), use_container_width=True)
         
-        st.markdown("---") # Visual Section Divider
+        # Use simple dynamic column configuration formatting mapping rather than custom styling syntax
+        currency_config = {c: st.column_config.NumberColumn(format="$%.2f") for c in df_current_calculated.columns if c not in ["Car Model", "Trim"]}
+        st.dataframe(df_current_calculated, column_config=currency_config, use_container_width=True)
+        
+        st.markdown("---") 
         
         # Section 2: Program Deltas
         st.header("📉 Section 2: Differences from Previous Month Program")
@@ -170,7 +163,6 @@ if current_file is not None:
             if df_prev_cleaned is not None and not df_prev_cleaned.empty:
                 df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount)
                 
-                # Merge current metrics with history
                 delta_df = pd.merge(
                     df_current_calculated, 
                     df_prev_calculated, 
@@ -198,15 +190,13 @@ if current_file is not None:
                         output_delta_records.append(delta_rec)
                         
                     df_deltas = pd.DataFrame(output_delta_records)
-                    delta_currency_cols = [c for c in df_deltas.columns if c not in ["Car Model", "Trim"]]
-                    delta_format_dict = {col: "${:,.2f}" for col in delta_currency_cols}
+                    delta_config = {col: st.column_config.NumberColumn(format="$%.2f") for col in df_deltas.columns if col not in ["Car Model", "Trim"]}
                     
-                    def style_deltas(val):
-                        if isinstance(val, (int, float)):
-                            if val > 0: return 'color: #D32F2F; font-weight: bold;'
-                            if val < 0: return 'color: #388E3C; font-weight: bold;'
-                        return ''
-                        
-                    st.caption("🟢 Green items indicate an improved program (lower payment); 🔴 Red items mean payments went up.")
-                    st.dataframe(
-                        df_deltas.style.format(delta_format_dict).map(style_deltas, subset=delta_currency_cols),
+                    st.caption("💡 Payments displaying positive values indicate a rate/cost increase vs last month.")
+                    st.dataframe(df_deltas, column_config=delta_config, use_container_width=True)
+                else:
+                    st.warning("⚠️ No exact matches found for combinations of Car Model and Trim between both uploaded files.")
+        else:
+            st.warning("💡 Drop your older sheet into the **'Upload Previous Month Excel File'** sidebar menu item to populate the program differences down here.")
+else:
+    st.info("👋 System ready. Please upload your **Current Program File** to load calculations.")
