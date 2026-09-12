@@ -164,13 +164,24 @@ if current_file is not None:
     if df_current_cleaned is not None and not df_current_cleaned.empty:
         df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
         
-        # Payment Filtering Mask Logic
+        # --- NEW: Car Model Dropdown Select Menu at Top of Page ---
+        unique_models = sorted(df_current_calculated["Car Model"].unique())
+        dropdown_options = ["All Models"] + unique_models
+        selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
+        
+        # Apply Dropdown Filter to Current Month
+        if selected_model != "All Models":
+            df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
+        else:
+            df_current_filtered = df_current_calculated.copy()
+        
+        # Apply Max Payment Filtering Logic
         payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
         if max_payment > 0:
-            mask = df_current_calculated[payment_cols].le(max_payment).any(axis=1)
-            df_current_display = df_current_calculated[mask]
+            mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
+            df_current_display = df_current_filtered[mask]
         else:
-            df_current_display = df_current_calculated.copy()
+            df_current_display = df_current_filtered.copy()
             
         # Section 1: Active Program Calculations
         st.header(f"📊 Section 1: Current Program Calculations ({frequency})")
@@ -191,12 +202,15 @@ if current_file is not None:
                 df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
                 
                 # Match previous data scope criteria against Section 1 display metrics
-                if max_payment > 0:
-                    df_prev_calculated = df_prev_calculated[df_prev_calculated['Car Model'].isin(df_current_display['Car Model'])]
+                df_prev_filtered = df_prev_calculated[df_prev_calculated['Car Model'].isin(df_current_display['Car Model'])]
+                
+                # If specific model is picked, isolate that one in Section 2 as well
+                if selected_model != "All Models":
+                    df_prev_filtered = df_prev_filtered[df_prev_filtered["Car Model"] == selected_model]
                 
                 delta_df = pd.merge(
                     df_current_display, 
-                    df_prev_calculated, 
+                    df_prev_filtered, 
                     on=["Car Model", "Trim"], 
                     suffixes=('_curr', '_prev')
                 )
@@ -207,12 +221,3 @@ if current_file is not None:
                         delta_rec = {
                             "Car Model": row["Car Model"],
                             "Trim": row["Trim"],
-                            "Δ MSRP": row["MSRP_curr"] - row["MSRP_prev"],
-                            "Δ Fin 24mo": row["Fin 24mo_curr"] - row["Fin 24mo_prev"],
-                            "Δ Fin 36mo": row["Fin 36mo_curr"] - row["Fin 36mo_prev"],
-                            "Δ Fin 48mo": row["Fin 48mo_curr"] - row["Fin 48mo_prev"],
-                            "Δ Fin 60mo": row["Fin 60mo_curr"] - row["Fin 60mo_prev"],
-                            "Δ Fin 72mo": row["Fin 72mo_curr"] - row["Fin 72mo_prev"],
-                            "Δ Fin 84mo": row["Fin 84mo_curr"] - row["Fin 84mo_prev"],
-                            "Δ Lease 36mo": row["Lease 36mo_curr"] - row["Lease 36mo_prev"],
-                            "Δ Lease 48mo": row["Lease 48mo_curr"] - row["Lease 48mo_prev"],
