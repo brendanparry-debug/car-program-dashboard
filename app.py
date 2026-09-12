@@ -192,7 +192,6 @@ if current_file is not None:
                 if selected_model != "All Models":
                     df_prev_filtered = df_prev_filtered[df_prev_filtered["Car Model"] == selected_model]
                 
-                # Direct merge approach
                 delta_df = pd.merge(
                     df_current_display, 
                     df_prev_filtered, 
@@ -201,7 +200,6 @@ if current_file is not None:
                 )
                 
                 if not delta_df.empty:
-                    # Clean vector calculation layout strategy to avoid broken script definitions
                     df_deltas = pd.DataFrame()
                     df_deltas["Car Model"] = delta_df["Car Model"]
                     df_deltas["Trim"] = delta_df["Trim"]
