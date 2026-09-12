@@ -101,8 +101,6 @@ def clean_and_parse_file(uploaded_file):
 
 def process_dataframe(df, manual_discount, is_biweekly):
     processed_records = []
-    
-    # Mathematical Frequency Multiplier: (Monthly * 12) / 26 if biweekly is checked
     factor = (12.0 / 26.0) if is_biweekly else 1.0
     
     for _, row in df.iterrows():
@@ -111,7 +109,6 @@ def process_dataframe(df, manual_discount, is_biweekly):
         fin_disc = row['Finance Discount']
         lease_disc = row['Lease Discount']
         
-        # Base Monthly Calculations
         f24 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 24mo Rate'], 24)
         f36 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 36mo Rate'], 36)
         f48 = calculate_finance_payment(msrp, fin_disc, manual_discount, row['Fin 48mo Rate'], 48)
@@ -146,12 +143,10 @@ def process_dataframe(df, manual_discount, is_biweekly):
 st.sidebar.header("🎛️ Dashboard Controls")
 manual_discount = st.sidebar.number_input("Apply Additional Manual Discount ($)", min_value=0.0, value=0.0, step=100.0)
 
-# Payment Frequency Selection Box
 frequency = st.sidebar.radio("Payment Frequency", ["Monthly", "Bi-Weekly"])
 is_biweekly = (frequency == "Bi-Weekly")
 
-# Maximum Budget Filter Box
-max_payment = st.sidebar.number_input(f"Filter: Maximum {frequency} Payment ($)", min_value=0.0, value=0.0, step=50.0, help="Set to $0.00 to show all vehicles.")
+max_payment = st.sidebar.number_input(f"Filter: Maximum {frequency} Payment ($)", min_value=0.0, value=0.0, step=50.0)
 
 st.sidebar.subheader("📂 File Uploads")
 current_file = st.sidebar.file_uploader("Upload Current Program Excel File", type=["xlsx", "xls"])
@@ -164,18 +159,15 @@ if current_file is not None:
     if df_current_cleaned is not None and not df_current_cleaned.empty:
         df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
         
-        # --- NEW: Car Model Dropdown Select Menu at Top of Page ---
         unique_models = sorted(df_current_calculated["Car Model"].unique())
         dropdown_options = ["All Models"] + unique_models
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
-        # Apply Dropdown Filter to Current Month
         if selected_model != "All Models":
             df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
         else:
             df_current_filtered = df_current_calculated.copy()
         
-        # Apply Max Payment Filtering Logic
         payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
         if max_payment > 0:
             mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
@@ -183,17 +175,12 @@ if current_file is not None:
         else:
             df_current_display = df_current_filtered.copy()
             
-        # Section 1: Active Program Calculations
         st.header(f"📊 Section 1: Current Program Calculations ({frequency})")
-        if max_payment > 0:
-            st.caption(f"Filters applied: Hiding vehicles where all calculated terms exceed **${max_payment:,.2f}**.")
-            
         currency_config = {c: st.column_config.NumberColumn(format="$%.2f") for c in df_current_calculated.columns if c not in ["Car Model", "Trim"]}
         st.dataframe(df_current_display, column_config=currency_config, use_container_width=True)
         
         st.markdown("---") 
         
-        # Section 2: Program Deltas
         st.header(f"📉 Section 2: Differences from Previous Month Program ({frequency})")
         if previous_file is not None:
             df_prev_cleaned = clean_and_parse_file(previous_file)
@@ -201,13 +188,11 @@ if current_file is not None:
             if df_prev_cleaned is not None and not df_prev_cleaned.empty:
                 df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
                 
-                # Match previous data scope criteria against Section 1 display metrics
                 df_prev_filtered = df_prev_calculated[df_prev_calculated['Car Model'].isin(df_current_display['Car Model'])]
-                
-                # If specific model is picked, isolate that one in Section 2 as well
                 if selected_model != "All Models":
                     df_prev_filtered = df_prev_filtered[df_prev_filtered["Car Model"] == selected_model]
                 
+                # Direct merge approach
                 delta_df = pd.merge(
                     df_current_display, 
                     df_prev_filtered, 
@@ -216,8 +201,18 @@ if current_file is not None:
                 )
                 
                 if not delta_df.empty:
-                    output_delta_records = []
-                    for _, row in delta_df.iterrows():
-                        delta_rec = {
-                            "Car Model": row["Car Model"],
-                            "Trim": row["Trim"],
+                    # Clean vector calculation layout strategy to avoid broken script definitions
+                    df_deltas = pd.DataFrame()
+                    df_deltas["Car Model"] = delta_df["Car Model"]
+                    df_deltas["Trim"] = delta_df["Trim"]
+                    df_deltas["Δ MSRP"] = delta_df["MSRP_curr"] - delta_df["MSRP_prev"]
+                    
+                    for col in payment_cols:
+                        df_deltas[f"Δ {col}"] = delta_df[f"{col}_curr"] - delta_df[f"{col}_prev"]
+                        
+                    delta_config = {col: st.column_config.NumberColumn(format="$%.2f") for col in df_deltas.columns if col not in ["Car Model", "Trim"]}
+                    st.caption(f"💡 Deltas reflect variance using the {frequency} payment structure conversion method.")
+                    st.dataframe(df_deltas, column_config=delta_config, use_container_width=True)
+                else:
+                    st.warning("⚠️ No matching rows found between the two files for the current filter criteria.")
+        else:
