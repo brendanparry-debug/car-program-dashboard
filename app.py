@@ -95,7 +95,6 @@ def clean_and_parse_file(uploaded_file):
         ]
         
         for col in numeric_cols:
-            # Drop % signs or currency marks if formatting slipped through
             df[col] = df[col].astype(str).str.replace('%', '', regex=False)
             df[col] = df[col].astype(str).str.replace('$', '', regex=False)
             df[col] = df[col].astype(str).str.replace(',', '', regex=False)
@@ -210,3 +209,4 @@ if current_file is not None:
                         
                     st.caption("🟢 Green items indicate an improved program (lower payment); 🔴 Red items mean payments went up.")
                     st.dataframe(
+                        df_deltas.style.format(delta_format_dict).applymap(style_deltas, subset=delta_currency_cols),
