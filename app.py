@@ -74,9 +74,10 @@ def clean_and_parse_file(uploaded_file):
         df = df_raw.iloc[:, :18].copy()
         df.columns = [COLUMN_MAPPING[i] for i in range(18)]
         
-        if len(df) > 0:
-            first_row_val = str(df.iloc[0, 0]).strip().lower()
-            if "car" in first_row_val or "model" in first_row_val:
+        # FIXED: Look directly at row 0, column 0 cell value safely without invoking iloc string objects
+        if not df.empty:
+            first_cell_value = str(df.iat[0, 0]).strip().lower()
+            if "car" in first_cell_value or "model" in first_cell_value:
                 df = df.iloc[1:].reset_index(drop=True)
             
         df['Car Model'] = df['Car Model'].astype(str).str.strip()
@@ -224,4 +225,3 @@ if current_file is not None:
                         else:
                             st.warning("⚠️ No matching Car Models and Trims found between both sheets to perform a comparison.")
         else:
-            st.error("❌ Failed to process calculation values from your Excel sheet.")
