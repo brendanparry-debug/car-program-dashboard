@@ -70,23 +70,18 @@ def clean_and_parse_file(uploaded_file):
     """Dynamically maps columns based on clean textual header matching rules with row-by-row cell normalization"""
     try:
         df_raw = pd.read_excel(uploaded_file)
-        # Clean whitespaces and normalize column casing for safety matching
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
         
         df_cleaned = pd.DataFrame()
         
-        # Cross-reference header labels flexibly
+        # Flexibly match columns case-insensitively
         for standard_key, file_label in HEADER_RULES.items():
-            # Match case-insensitively to prevent file variation crashes
             matched_col = next((c for c in df_raw.columns if c.lower() == file_label.lower()), None)
             if matched_col:
                 df_cleaned[standard_key] = df_raw[matched_col]
             else:
                 df_cleaned[standard_key] = 0.0
                 
-        if df_cleaned.empty or 'Car Model' not in df_cleaned.columns:
-            return None
-            
         df_cleaned['Car Model'] = df_cleaned['Car Model'].astype(str).str.strip()
         df_cleaned['Trim'] = df_cleaned['Trim'].astype(str).str.strip()
         
@@ -98,7 +93,7 @@ def clean_and_parse_file(uploaded_file):
             df_cleaned[col] = df_cleaned[col].astype(str).str.replace(',', '', regex=False)
             df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce').fillna(0.0)
             
-            # Normalization lookup logic rule for decimals vs integers
+            # Row-by-row single cell validation. If an individual cell is a decimal (e.g. 0.0499), convert it to whole percentage (4.99)
             if 'Rate' in col or 'Residual' in col:
                 df_cleaned[col] = df_cleaned[col].apply(lambda x: x * 100.0 if (0.0 < x <= 1.0) else x)
             
@@ -108,10 +103,11 @@ def clean_and_parse_file(uploaded_file):
         return None
 
 def process_dataframe(df, manual_discount, is_biweekly):
-    if df is None or df.empty or 'Car Model' not in df.columns:
+    if df is None or df.empty:
         return pd.DataFrame()
         
     processed_records = []
+    # Precise business calculation rule: (Monthly payment * 12) / 26
     factor = (12.0 / 26.0) if is_biweekly else 1.0
     
     for _, row in df.iterrows():
@@ -150,7 +146,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
         
     df_result = pd.DataFrame(processed_records)
     
-    # Round metrics figures safely to standard integers
+    # Force all dollar amounts in Section 1 to whole numbers (integers)
     cols_to_round = ["MSRP", "Cash Price (Net)", "Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
     for col in cols_to_round:
         if col in df_result.columns:
@@ -159,7 +155,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
     return df_result
 
 def normalize_model_name(name_str):
-    """Uses a robust replacement string map to clean layout variations safely"""
+    """FIXED: Safely extracts core vehicle names without crashing list objects"""
     text = str(name_str).lower()
     for year in ["(2025)", "(2026)", "(2027)", "(2028)"]:
         text = text.replace(year, "")
@@ -189,6 +185,7 @@ def compute_deltas(df_curr, df_prev, payment_cols):
     for col in payment_cols:
         df_deltas[f"Δ {col}"] = delta_df[f"{col}_curr"] - delta_df[f"{col}_prev"]
         
+    # Force all variance changes in Section 2 to whole numbers (integers)
     delta_numeric_cols = ["Δ MSRP"] + [f"Δ {col}" for col in payment_cols]
     for col in delta_numeric_cols:
         if col in df_deltas.columns:
