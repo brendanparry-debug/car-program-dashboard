@@ -57,8 +57,8 @@ def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, res
     else:
         depreciation_charge = (net_cap_cost - residual_value) / months
         
-    # FIXED: Convert standard lease interest rate percentage correctly to Money Factor
-    money_factor = (rate_pct / 100) / 24 if rate_pct > 1 else rate_pct / 24
+    # Standard lease interest rate percentage conversion to Money Factor
+    money_factor = (rate_pct / 100) / 24
     
     # 2. Finance Rent Charge
     finance_charge = (net_cap_cost + residual_value) * money_factor
@@ -67,23 +67,19 @@ def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, res
     return max(0.0, total_lease_payment)
 
 def clean_and_parse_file(uploaded_file):
-    """Dynamically maps columns based on clean textual header matching rules"""
+    """Dynamically maps columns based on clean textual header matching rules with decimal normalization"""
     try:
-        # Read file natively using row 1 as standard headers
         df_raw = pd.read_excel(uploaded_file)
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
         
         df_cleaned = pd.DataFrame()
         
-        # Verify and map headers dynamically
         for standard_key, file_label in HEADER_RULES.items():
             if file_label in df_raw.columns:
                 df_cleaned[standard_key] = df_raw[file_label]
             else:
-                # Fill missing columns (like a 24mo lease column) with 0.0 safely
                 df_cleaned[standard_key] = 0.0
                 
-        # Clean string formats
         df_cleaned['Car Model'] = df_cleaned['Car Model'].astype(str).str.strip()
         df_cleaned['Trim'] = df_cleaned['Trim'].astype(str).str.strip()
         
@@ -94,6 +90,12 @@ def clean_and_parse_file(uploaded_file):
             df_cleaned[col] = df_cleaned[col].astype(str).str.replace('$', '', regex=False)
             df_cleaned[col] = df_cleaned[col].astype(str).str.replace(',', '', regex=False)
             df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce').fillna(0.0)
+            
+            # AUTO-NORMALIZATION: If the file used decimals like 0.0399 or 0.57 instead of 3.99 or 57, scale them to matching format
+            if 'Rate' in col or 'Residual' in col:
+                # If the max value in the series is less than or equal to 1.0, it's a decimal format sheet
+                if df_cleaned[col].max() > 0 and df_cleaned[col].max() <= 1.0:
+                    df_cleaned[col] = df_cleaned[col] * 100.0
             
         return df_cleaned
     except Exception as e:
@@ -125,8 +127,8 @@ def process_dataframe(df, manual_discount, is_biweekly):
         l60 = calculate_lease_payment(msrp, lease_disc, manual_discount, row['Lease 60mo Rate'], row['Lease 60mo Residual'], 60)
         
         record = {
-            "Car Model": row['Car Model'],
-            "Trim": row['Trim'],
+            "Car Model": row['Car Model'], # FIXED: Included explicitly in display dictionary
+            "Trim": row['Trim'],           # FIXED: Included explicitly in display dictionary
             "MSRP": msrp,
             "Cash Price (Net)": msrp - cash_discount,
             "Fin 24mo": f24 * factor, 
@@ -218,8 +220,3 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
                     
                     if not df_deltas.empty:
                         if selected_model != "All Models":
-                            df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
-                        else:
-                            df_deltas_filtered = df_deltas.copy()
-                            
-                        st.write("Showing differences (**Current Month** minus **Previous Month**):")
