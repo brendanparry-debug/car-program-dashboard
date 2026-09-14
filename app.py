@@ -152,19 +152,17 @@ def process_dataframe(df, manual_discount, is_biweekly):
     return df_result
 
 def normalize_model_name(name_str):
-    """FIXED: Normalizes model names by stripping layout year brackets like '(2026)' for uniform dataset matching"""
-    name_clean = str(name_str).split('(')[0]
-    return name_clean.strip().lower()
+    """FIXED: Accurately isolates the core model string name from trailing year brackets"""
+    name_clean = str(name_str).split('(')
+    return name_clean[0].strip().lower()
 
 def compute_deltas(df_curr, df_prev, payment_cols):
     if df_curr.empty or df_prev.empty:
         return pd.DataFrame()
         
-    # Make deep memory copies to safely modify lookup keys without changing UI tables
     df_c = df_curr.copy()
     df_p = df_prev.copy()
     
-    # Apply lookup key harmonization
     df_c['match_model'] = df_c['Car Model'].apply(normalize_model_name)
     df_p['match_model'] = df_p['Car Model'].apply(normalize_model_name)
     df_c['match_trim'] = df_c['Trim'].astype(str).str.strip().str.lower()
@@ -221,4 +219,8 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         dropdown_options = ["All Models"] + unique_models
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
-        # Apply drop-down filtering safely to the base datasets
+        if selected_model != "All Models":
+            df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
+        else:
+            df_current_filtered = df_current_calculated.copy()
+        
