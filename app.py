@@ -7,26 +7,26 @@ st.set_page_config(page_title="Car Program Analytics Dashboard", layout="wide")
 st.title("🚗 Automotive Finance & Lease Program Dashboard")
 st.write("Upload your program files to calculate and compare dealer matrices on a single page.")
 
-# Define absolute standard letters mapping for columns A through R
-COLUMN_MAPPING = {
-    0: 'Car Model',
-    1: 'Trim',
-    2: 'MSRP',
-    3: 'Cash Discount',
-    4: 'Fin 24mo Rate',
-    5: 'Fin 36mo Rate',
-    6: 'Fin 48mo Rate',
-    7: 'Fin 60mo Rate',
-    8: 'Fin 72mo Rate',
-    9: 'Fin 84mo Rate',
-    10: 'Finance Discount',
-    11: 'Lease 36mo Rate',
-    12: 'Lease 48mo Rate',
-    13: 'Lease 60mo Rate',
-    14: 'Lease Discount',
-    15: 'Lease 36mo Residual',
-    16: 'Lease 48mo Residual',
-    17: 'Lease 60mo Residual'
+# Dynamic Mapping Definition matching your exact Excel Text Headers
+HEADER_RULES = {
+    'Car Model': 'Model',
+    'Trim': 'Trim',
+    'MSRP': 'MSRP',
+    'Cash Discount': 'Cash Discount',
+    'Fin 24mo Rate': '24 month finance rate',
+    'Fin 36mo Rate': '36 month finance rate',
+    'Fin 48mo Rate': '48 month finance rate',
+    'Fin 60mo Rate': '60 month finance rate',
+    'Fin 72mo Rate': '72 month finance rate',
+    'Fin 84mo Rate': '84 month finance rate',
+    'Finance Discount': 'Finance discount',
+    'Lease 36mo Rate': '36 month lease rate',
+    'Lease 48mo Rate': '48 month lease rate',
+    'Lease 60mo Rate': '60 month lease rate',
+    'Lease Discount': 'lease discount',
+    'Lease 36mo Residual': '36 month lease residual',
+    'Lease 48mo Residual': '48 month lease residual',
+    'Lease 60mo Residual': '60 month lease residual'
 }
 
 # --- Calculation Functions ---
@@ -51,53 +51,53 @@ def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, res
     net_cap_cost = msrp - lease_discount - manual_discount
     residual_value = msrp * (residual_pct / 100)
     
+    # 1. Depreciation Charge
     if net_cap_cost <= residual_value:
         depreciation_charge = 0.0
     else:
         depreciation_charge = (net_cap_cost - residual_value) / months
         
-    money_factor = (rate_pct / 100) / 24
+    # FIXED: Convert standard lease interest rate percentage correctly to Money Factor
+    money_factor = (rate_pct / 100) / 24 if rate_pct > 1 else rate_pct / 24
+    
+    # 2. Finance Rent Charge
     finance_charge = (net_cap_cost + residual_value) * money_factor
     
     total_lease_payment = depreciation_charge + finance_charge
     return max(0.0, total_lease_payment)
 
 def clean_and_parse_file(uploaded_file):
-    """Safely extracts columns A through R and applies safe type casting"""
+    """Dynamically maps columns based on clean textual header matching rules"""
     try:
-        df_raw = pd.read_excel(uploaded_file, header=None)
+        # Read file natively using row 1 as standard headers
+        df_raw = pd.read_excel(uploaded_file)
+        df_raw.columns = [str(c).strip() for c in df_raw.columns]
         
-        if df_raw.shape[1] < 18:
-            st.error(f"❌ Uploaded file must have at least 18 columns (A through R). Found only {df_raw.shape[1]} columns.")
-            return None
-            
-        df = df_raw.iloc[:, :18].copy()
-        df.columns = [COLUMN_MAPPING[i] for i in range(18)]
+        df_cleaned = pd.DataFrame()
         
-        if len(df) > 0:
-            first_cell_value = str(df.iloc[0, 0]).strip().lower()
-            if "car" in first_cell_value or "model" in first_cell_value:
-                df = df.iloc[1:].reset_index(drop=True)
-            
-        df['Car Model'] = df['Car Model'].astype(str).str.strip()
-        df['Trim'] = df['Trim'].astype(str).str.strip()
+        # Verify and map headers dynamically
+        for standard_key, file_label in HEADER_RULES.items():
+            if file_label in df_raw.columns:
+                df_cleaned[standard_key] = df_raw[file_label]
+            else:
+                # Fill missing columns (like a 24mo lease column) with 0.0 safely
+                df_cleaned[standard_key] = 0.0
+                
+        # Clean string formats
+        df_cleaned['Car Model'] = df_cleaned['Car Model'].astype(str).str.strip()
+        df_cleaned['Trim'] = df_cleaned['Trim'].astype(str).str.strip()
         
-        numeric_cols = [
-            'MSRP', 'Cash Discount', 'Fin 24mo Rate', 'Fin 36mo Rate', 'Fin 48mo Rate', 
-            'Fin 60mo Rate', 'Fin 72mo Rate', 'Fin 84mo Rate', 'Finance Discount', 
-            'Lease 36mo Rate', 'Lease 48mo Rate', 'Lease 60mo Rate', 'Lease Discount', 
-            'Lease 36mo Residual', 'Lease 48mo Residual', 'Lease 60mo Residual'
-        ]
-        
+        # Sanitize financial characters
+        numeric_cols = [col for col in df_cleaned.columns if col not in ['Car Model', 'Trim']]
         for col in numeric_cols:
-            df[col] = df[col].astype(str).str.replace('%', '', regex=False)
-            df[col] = df[col].astype(str).str.replace('$', '', regex=False)
-            df[col] = df[col].astype(str).str.replace(',', '', regex=False)
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            df_cleaned[col] = df_cleaned[col].astype(str).str.replace('%', '', regex=False)
+            df_cleaned[col] = df_cleaned[col].astype(str).str.replace('$', '', regex=False)
+            df_cleaned[col] = df_cleaned[col].astype(str).str.replace(',', '', regex=False)
+            df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce').fillna(0.0)
             
-        return df
+        return df_cleaned
     except Exception as e:
-        st.error(f"Error reading file structure: {e}")
+        st.error(f"Error validating file headers: {e}")
         return None
 
 def process_dataframe(df, manual_discount, is_biweekly):
@@ -176,62 +176,50 @@ previous_file = st.sidebar.file_uploader("Upload Previous Month Excel File", typ
 # --- Main Page Execution ---
 payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
 
-# Stop execution if current month file is missing
 if current_file is None:
-    st.info("👋 Welcome! Please upload your Current Month Excel file to begin.")
+    st.info("👋 Welcome! Please upload your program file to view calculated dealer matrices.")
     st.stop()
 
 st.subheader("📊 Section 1: Current Program Analytics")
 df_current_cleaned = clean_and_parse_file(current_file)
 
-if df_current_cleaned is None or df_current_cleaned.empty:
-    st.error("❌ Failed to parse data columns from your Current Month Excel file.")
-    st.stop()
-
-df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
-
-if df_current_calculated is None or df_current_calculated.empty:
-    st.error("❌ Calculations returned empty rows. Check data integrity inside your file columns.")
-    st.stop()
-
-# Build top filtering drop-down elements
-unique_models = sorted(df_current_calculated["Car Model"].unique())
-dropdown_options = ["All Models"] + unique_models
-selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
-
-if selected_model != "All Models":
-    df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
-else:
-    df_current_filtered = df_current_calculated.copy()
-
-if max_payment > 0:
-    mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
-    df_current_display = df_current_filtered[mask]
-else:
-    df_current_display = df_current_filtered.copy()
+if df_current_cleaned is not None and not df_current_cleaned.empty:
+    df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
     
-st.dataframe(df_current_display)
-
-# --- Section 2: Flat Comparison Execution Block ---
-if previous_file is not None:
-    st.markdown("---")
-    st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
-    
-    df_prev_cleaned = clean_and_parse_file(previous_file)
-    
-    if df_prev_cleaned is not None and not df_prev_cleaned.empty:
-        df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
+    if df_current_calculated is not None and not df_current_calculated.empty:
+        unique_models = sorted(df_current_calculated["Car Model"].unique())
+        dropdown_options = ["All Models"] + unique_models
+        selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
-        if not df_prev_calculated.empty:
-            df_deltas = compute_deltas(df_current_calculated, df_prev_calculated, payment_cols)
+        if selected_model != "All Models":
+            df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
+        else:
+            df_current_filtered = df_current_calculated.copy()
+        
+        if max_payment > 0:
+            mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
+            df_current_display = df_current_filtered[mask]
+        else:
+            df_current_display = df_current_filtered.copy()
             
-            if not df_deltas.empty:
-                if selected_model != "All Models":
-                    df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
-                else:
-                    df_deltas_filtered = df_deltas.copy()
+        st.dataframe(df_current_display)
+        
+        # --- Section 2: Delta Comparison View ---
+        if previous_file is not None:
+            st.markdown("---")
+            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+            
+            df_prev_cleaned = clean_and_parse_file(previous_file)
+            if df_prev_cleaned is not None and not df_prev_cleaned.empty:
+                df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
+                
+                if not df_prev_calculated.empty:
+                    df_deltas = compute_deltas(df_current_calculated, df_prev_calculated, payment_cols)
                     
-                st.write("Showing differences (**Current Month** minus **Previous Month**):")
-                st.dataframe(df_deltas_filtered)
-            else:
-                st.warning("⚠️ No matching Car Models and Trims found between both sheets to perform a comparison.")
+                    if not df_deltas.empty:
+                        if selected_model != "All Models":
+                            df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
+                        else:
+                            df_deltas_filtered = df_deltas.copy()
+                            
+                        st.write("Showing differences (**Current Month** minus **Previous Month**):")
