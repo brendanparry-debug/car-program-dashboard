@@ -169,7 +169,10 @@ current_file = st.sidebar.file_uploader("Upload Current Program Excel File", typ
 previous_file = st.sidebar.file_uploader("Upload Previous Month Excel File", type=["xlsx", "xls"])
 
 # --- Main Page Execution ---
+payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
+
 if current_file is not None:
+    st.subheader("📊 Section 1: Current Program Analytics")
     df_current_cleaned = clean_and_parse_file(current_file)
     
     if df_current_cleaned is not None and not df_current_cleaned.empty:
@@ -184,9 +187,33 @@ if current_file is not None:
         else:
             df_current_filtered = df_current_calculated.copy()
         
-        payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
         if max_payment > 0:
             mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
             df_current_display = df_current_filtered[mask]
         else:
             df_current_display = df_current_filtered.copy()
+            
+        # Display the main metrics data table
+        st.dataframe(df_current_display)
+        
+        # --- Section 2: Restored Comparison View ---
+        if previous_file is not None:
+            st.markdown("---")
+            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+            
+            df_prev_cleaned = clean_and_parse_file(previous_file)
+            if df_prev_cleaned is not None and not df_prev_cleaned.empty:
+                df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
+                
+                df_deltas = compute_deltas(df_current_calculated, df_prev_calculated, payment_cols)
+                
+                if not df_deltas.empty:
+                    if selected_model != "All Models":
+                        df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
+                    else:
+                        df_deltas_filtered = df_deltas.copy()
+                        
+                    st.write("Showing variance differences (**Current Month** minus **Previous Month**):")
+                    st.dataframe(df_deltas_filtered)
+                else:
+                    st.warning("⚠️ No matching Car Models and Trims found between both sheets to perform a comparison.")
