@@ -213,14 +213,20 @@ if current_file is None:
 st.subheader("📊 Section 1: Current Program Analytics")
 df_current_cleaned = clean_and_parse_file(current_file)
 
-if df_current_cleaned is not None and not df_current_cleaned.empty:
-    df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
-    
-    if df_current_calculated is not None and not df_current_calculated.empty:
-        unique_models = sorted(df_current_calculated["Car Model"].unique())
-        dropdown_options = ["All Models"] + unique_models
-        selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
-        
-        if selected_model != "All Models":
-            df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
-        else:
+if df_current_cleaned is None or df_current_cleaned.empty:
+    st.error("❌ Failed to parse data columns from your Current Month Excel file.")
+    st.stop()
+
+df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+
+if df_current_calculated is None or df_current_calculated.empty:
+    st.error("❌ Calculations returned empty rows.")
+    st.stop()
+
+# Dropdown setup
+unique_models = sorted(df_current_calculated["Car Model"].unique())
+dropdown_options = ["All Models"] + unique_models
+selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
+
+# Filter display logic
+if selected_model != "All Models":
