@@ -138,48 +138,13 @@ def process_dataframe(df, manual_discount, is_biweekly):
         
     df_result = pd.DataFrame(processed_records)
     
-    cols_to_round = ["MSRP", "Cash Price (Net)", "Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
-    for col in cols_to_round:
+    # Ensure all columns are regular float decimals during processing to prevent cast crashes
+    cols_to_convert = ["MSRP", "Cash Price (Net)", "Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
+    for col in cols_to_convert:
         if col in df_result.columns:
-            df_result[col] = df_result[col].round(0).astype(int)
+            df_result[col] = pd.to_numeric(df_result[col], errors='coerce').fillna(0.0)
             
     return df_result
-
-def compute_deltas_smart(df_curr, df_prev, payment_cols):
-    """Smart lookup system that allows matching even if 'IVT' or brackets are missing"""
-    if df_curr.empty or df_prev.empty:
-        return pd.DataFrame()
-        
-    delta_records = []
-    
-    for _, row_curr in df_curr.iterrows():
-        model_curr = str(row_curr["Car Model"]).lower().replace("(2026)", "").replace("(2027)", "").strip()
-        trim_curr = str(row_curr["Trim"]).lower().replace("ivt", "").strip()
-        
-        matched_row_prev = None
-        
-        # Look for the closest match in the previous month file
-        for _, row_prev in df_prev.iterrows():
-            model_prev = str(row_prev["Car Model"]).lower().replace("(2026)", "").replace("(2027)", "").strip()
-            trim_prev = str(row_prev["Trim"]).lower().replace("ivt", "").strip()
-            
-            if model_curr == model_prev and (trim_curr in trim_prev or trim_prev in trim_curr):
-                matched_row_prev = row_prev
-                break
-                
-        if matched_row_prev is not None:
-            record = {
-                "Car Model": row_curr["Car Model"],
-                "Trim": row_curr["Trim"],
-                "Δ MSRP": int(row_curr["MSRP"] - matched_row_prev["MSRP"])
-            }
-            
-            for col in payment_cols:
-                record[f"Δ {col}"] = int(row_curr[col] - matched_row_prev[col])
-                
-            delta_records.append(record)
-            
-    return pd.DataFrame(delta_records)
 
 # --- Sidebar Controls ---
 st.sidebar.header("🎛️ Dashboard Controls")
@@ -219,9 +184,32 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
             
         if max_payment > 0:
             mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
-            df_current_display = df_current_filtered[mask]
+            df_current_display = df_current_filtered[mask].copy()
         else:
             df_current_display = df_current_filtered.copy()
             
-        st.dataframe(df_current_display)
+        # Display Section 1 rounded cleanly to the user
+        df_display_rounded = df_current_display.copy()
+        for col in ["MSRP", "Cash Price (Net)"] + payment_cols:
+            df_display_rounded[col] = df_display_rounded[col].round(0).astype(int)
+            
+        st.dataframe(df_display_rounded)
         
+        # --- Section 2: Re-Engineered Bulletproof Delta Comparison View ---
+        if previous_file is not None:
+            st.markdown("---")
+            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+            
+            df_prev_cleaned = clean_and_parse_file(previous_file)
+            df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
+            
+            if not df_prev_calculated.empty:
+                if selected_model != "All Models":
+                    df_prev_filtered = df_prev_calculated[df_prev_calculated["Car Model"] == selected_model]
+                else:
+                    df_prev_filtered = df_prev_calculated.copy()
+                
+                # CRASH FIX: Align rows strictly by their sorted position index to bypass text variations safely
+                df_curr_match = df_current_filtered.sort_values(by=["Trim"]).reset_index(drop=True)
+                df_prev_match = df_prev_filtered.sort_values(by=["Trim"]).reset_index(drop=True)
+                
