@@ -151,16 +151,32 @@ def process_dataframe(df, manual_discount, is_biweekly):
             
     return df_result
 
+def normalize_model_name(name_str):
+    """FIXED: Normalizes model names by stripping layout year brackets like '(2026)' for uniform dataset matching"""
+    name_clean = str(name_str).split('(')[0]
+    return name_clean.strip().lower()
+
 def compute_deltas(df_curr, df_prev, payment_cols):
     if df_curr.empty or df_prev.empty:
         return pd.DataFrame()
-    delta_df = pd.merge(df_curr, df_prev, on=["Car Model", "Trim"], suffixes=('_curr', '_prev'))
+        
+    # Make deep memory copies to safely modify lookup keys without changing UI tables
+    df_c = df_curr.copy()
+    df_p = df_prev.copy()
+    
+    # Apply lookup key harmonization
+    df_c['match_model'] = df_c['Car Model'].apply(normalize_model_name)
+    df_p['match_model'] = df_p['Car Model'].apply(normalize_model_name)
+    df_c['match_trim'] = df_c['Trim'].astype(str).str.strip().str.lower()
+    df_p['match_trim'] = df_p['Trim'].astype(str).str.strip().str.lower()
+    
+    delta_df = pd.merge(df_c, df_p, on=["match_model", "match_trim"], suffixes=('_curr', '_prev'))
     if delta_df.empty:
         return pd.DataFrame()
         
     df_deltas = pd.DataFrame()
-    df_deltas["Car Model"] = delta_df["Car Model"]
-    df_deltas["Trim"] = delta_df["Trim"]
+    df_deltas["Car Model"] = delta_df["Car Model_curr"]
+    df_deltas["Trim"] = delta_df["Trim_curr"]
     df_deltas["Δ MSRP"] = delta_df["MSRP_curr"] - delta_df["MSRP_prev"]
     
     for col in payment_cols:
@@ -206,21 +222,3 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
         # Apply drop-down filtering safely to the base datasets
-        if selected_model != "All Models":
-            df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
-        else:
-            df_current_filtered = df_current_calculated.copy()
-        
-        if max_payment > 0:
-            mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
-            df_current_display = df_current_filtered[mask]
-        else:
-            df_current_display = df_current_filtered.copy()
-            
-        st.dataframe(df_current_display)
-        
-        # --- Section 2: Fixed Delta Comparison View ---
-        if previous_file is not None:
-            st.markdown("---")
-            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
-            
