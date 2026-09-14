@@ -145,37 +145,38 @@ def process_dataframe(df, manual_discount, is_biweekly):
             
     return df_result
 
-def compute_deltas(df_curr, df_prev, payment_cols):
+def compute_deltas_robust(df_curr, df_prev, payment_cols):
+    """FIXED robust dictionary-based look-up system to override index row sequence sorting variations"""
     if df_curr.empty or df_prev.empty:
         return pd.DataFrame()
         
-    df_c = df_curr.copy()
-    df_p = df_prev.copy()
-    
-    # Simple, non-destructive exact name join matching rules
-    df_c['key_model'] = df_c['Car Model'].astype(str).str.strip()
-    df_p['key_model'] = df_p['Car Model'].astype(str).str.strip()
-    df_c['key_trim'] = df_c['Trim'].astype(str).str.strip()
-    df_p['key_trim'] = df_p['Trim'].astype(str).str.strip()
-    
-    delta_df = pd.merge(df_c, df_p, on=["key_model", "key_trim"], suffixes=('_curr', '_prev'))
-    if delta_df.empty:
-        return pd.DataFrame()
+    # Build dictionary map out of previous month data frame
+    prev_map = {}
+    for _, row in df_prev.iterrows():
+        key = (str(row["Car Model"]).strip().lower(), str(row["Trim"]).strip().lower())
+        prev_map[key] = row
         
-    df_deltas = pd.DataFrame()
-    df_deltas["Car Model"] = delta_df["Car Model_curr"]
-    df_deltas["Trim"] = delta_df["Trim_curr"]
-    df_deltas["Δ MSRP"] = delta_df["MSRP_curr"] - delta_df["MSRP_prev"]
+    delta_records = []
     
-    for col in payment_cols:
-        df_deltas[f"Δ {col}"] = delta_df[f"{col}_curr"] - delta_df[f"{col}_prev"]
+    # Track through current dataset row by row and match dynamically
+    for _, row_curr in df_curr.iterrows():
+        key = (str(row_curr["Car Model"]).strip().lower(), str(row_curr["Trim"]).strip().lower())
         
-    delta_numeric_cols = ["Δ MSRP"] + [f"Δ {col}" for col in payment_cols]
-    for col in delta_numeric_cols:
-        if col in df_deltas.columns:
-            df_deltas[col] = df_deltas[col].round(0).astype(int)
+        if key in prev_map:
+            row_prev = prev_map[key]
             
-    return df_deltas
+            record = {
+                "Car Model": row_curr["Car Model"],
+                "Trim": row_curr["Trim"],
+                "Δ MSRP": int(row_curr["MSRP"] - row_prev["MSRP"])
+            }
+            
+            for col in payment_cols:
+                record[f"Δ {col}"] = int(row_curr[col] - row_prev[col])
+                
+            delta_records.append(record)
+            
+    return pd.DataFrame(delta_records)
 
 # --- Sidebar Controls ---
 st.sidebar.header("🎛️ Dashboard Controls")
@@ -208,7 +209,6 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         dropdown_options = ["All Models"] + unique_models
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
-        # Apply drop-down filtering safely to the base datasets
         if selected_model != "All Models":
             df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
         else:
@@ -222,8 +222,9 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
             
         st.dataframe(df_current_display)
         
-        # --- Section 2 Execution Block ---
+        # --- Section 2: Robust Delta Comparison View ---
         if previous_file is not None:
             st.markdown("---")
             st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
             
+            df_prev_cleaned = clean_and_parse_file(previous_file)
