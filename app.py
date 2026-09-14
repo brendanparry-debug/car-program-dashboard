@@ -91,7 +91,7 @@ def clean_and_parse_file(uploaded_file):
             df_cleaned[col] = df_cleaned[col].astype(str).str.replace(',', '', regex=False)
             df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce').fillna(0.0)
             
-            # FIXED: Row-by-row single cell validation. If an individual cell is a decimal (e.g. 0.0499), convert it to whole percentage (4.99)
+            # Row-by-row single cell validation. If an individual cell is a decimal (e.g. 0.0499), convert it to whole percentage (4.99)
             if 'Rate' in col or 'Residual' in col:
                 df_cleaned[col] = df_cleaned[col].apply(lambda x: x * 100.0 if (0.0 < x <= 1.0) else x)
             
