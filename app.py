@@ -212,6 +212,7 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         dropdown_options = ["All Models"] + unique_models
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
+        # Apply drop-down filtering safely to the base datasets
         if selected_model != "All Models":
             df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
         else:
@@ -225,6 +226,6 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
             
         st.dataframe(df_current_display)
         
-        # --- Section 2: Safe Flat Execution Block ---
+        # --- Section 2: Fixed Flat Delta Execution Block ---
         if previous_file is not None:
             st.markdown("---")
