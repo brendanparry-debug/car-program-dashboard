@@ -105,7 +105,6 @@ def process_dataframe(df, manual_discount, is_biweekly):
         return pd.DataFrame()
         
     processed_records = []
-    # Retained your precise business logic calculation: (Monthly * 12) / 26
     factor = (12.0 / 26.0) if is_biweekly else 1.0
     
     for _, row in df.iterrows():
@@ -144,7 +143,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
         
     df_result = pd.DataFrame(processed_records)
     
-    # FIXED: Force all dollar amounts in Section 1 to whole numbers (integers)
+    # Force all dollar amounts in Section 1 to whole numbers (integers)
     cols_to_round = ["MSRP", "Cash Price (Net)", "Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
     for col in cols_to_round:
         if col in df_result.columns:
@@ -167,7 +166,7 @@ def compute_deltas(df_curr, df_prev, payment_cols):
     for col in payment_cols:
         df_deltas[f"Δ {col}"] = delta_df[f"{col}_curr"] - delta_df[f"{col}_prev"]
         
-    # FIXED: Force all variance changes in Section 2 to whole numbers (integers)
+    # Force all variance changes in Section 2 to whole numbers (integers)
     delta_numeric_cols = ["Δ MSRP"] + [f"Δ {col}" for col in payment_cols]
     for col in delta_numeric_cols:
         if col in df_deltas.columns:
@@ -206,6 +205,7 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         dropdown_options = ["All Models"] + unique_models
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
+        # Apply drop-down filtering safely to the base datasets
         if selected_model != "All Models":
             df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
         else:
@@ -219,6 +219,8 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
             
         st.dataframe(df_current_display)
         
-        # --- Section 2: Delta Comparison View ---
+        # --- Section 2: Fixed Delta Comparison View ---
         if previous_file is not None:
             st.markdown("---")
+            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+            
