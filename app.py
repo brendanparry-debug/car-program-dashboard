@@ -152,7 +152,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
     return df_result
 
 def normalize_model_name(name_str):
-    """FIXED: Uses a robust, error-free replacement mechanism to strip year layout strings safely"""
+    """Uses a robust, error-free replacement mechanism to strip year layout strings safely"""
     text = str(name_str).lower()
     for year in ["(2025)", "(2026)", "(2027)", "(2028)"]:
         text = text.replace(year, "")
