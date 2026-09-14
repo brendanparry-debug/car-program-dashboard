@@ -93,7 +93,6 @@ def clean_and_parse_file(uploaded_file):
             
             # AUTO-NORMALIZATION: If the file used decimals like 0.0399 or 0.57 instead of 3.99 or 57, scale them to matching format
             if 'Rate' in col or 'Residual' in col:
-                # If the max value in the series is less than or equal to 1.0, it's a decimal format sheet
                 if df_cleaned[col].max() > 0 and df_cleaned[col].max() <= 1.0:
                     df_cleaned[col] = df_cleaned[col] * 100.0
             
@@ -127,8 +126,8 @@ def process_dataframe(df, manual_discount, is_biweekly):
         l60 = calculate_lease_payment(msrp, lease_disc, manual_discount, row['Lease 60mo Rate'], row['Lease 60mo Residual'], 60)
         
         record = {
-            "Car Model": row['Car Model'], # FIXED: Included explicitly in display dictionary
-            "Trim": row['Trim'],           # FIXED: Included explicitly in display dictionary
+            "Car Model": row['Car Model'],
+            "Trim": row['Trim'],
             "MSRP": msrp,
             "Cash Price (Net)": msrp - cash_discount,
             "Fin 24mo": f24 * factor, 
@@ -220,3 +219,7 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
                     
                     if not df_deltas.empty:
                         if selected_model != "All Models":
+                            df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
+                        else:
+                            df_deltas_filtered = df_deltas.copy()
+                        
