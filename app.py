@@ -145,34 +145,37 @@ def process_dataframe(df, manual_discount, is_biweekly):
             
     return df_result
 
-def compute_deltas_robust(df_curr, df_prev, payment_cols):
-    """FIXED robust dictionary-based look-up system to override index row sequence sorting variations"""
+def compute_deltas_smart(df_curr, df_prev, payment_cols):
+    """Smart lookup system that allows matching even if 'IVT' or brackets are missing"""
     if df_curr.empty or df_prev.empty:
         return pd.DataFrame()
         
-    # Build dictionary map out of previous month data frame
-    prev_map = {}
-    for _, row in df_prev.iterrows():
-        key = (str(row["Car Model"]).strip().lower(), str(row["Trim"]).strip().lower())
-        prev_map[key] = row
-        
     delta_records = []
     
-    # Track through current dataset row by row and match dynamically
     for _, row_curr in df_curr.iterrows():
-        key = (str(row_curr["Car Model"]).strip().lower(), str(row_curr["Trim"]).strip().lower())
+        model_curr = str(row_curr["Car Model"]).lower().replace("(2026)", "").replace("(2027)", "").strip()
+        trim_curr = str(row_curr["Trim"]).lower().replace("ivt", "").strip()
         
-        if key in prev_map:
-            row_prev = prev_map[key]
+        matched_row_prev = None
+        
+        # Look for the closest match in the previous month file
+        for _, row_prev in df_prev.iterrows():
+            model_prev = str(row_prev["Car Model"]).lower().replace("(2026)", "").replace("(2027)", "").strip()
+            trim_prev = str(row_prev["Trim"]).lower().replace("ivt", "").strip()
             
+            if model_curr == model_prev and (trim_curr in trim_prev or trim_prev in trim_curr):
+                matched_row_prev = row_prev
+                break
+                
+        if matched_row_prev is not None:
             record = {
                 "Car Model": row_curr["Car Model"],
                 "Trim": row_curr["Trim"],
-                "Δ MSRP": int(row_curr["MSRP"] - row_prev["MSRP"])
+                "Δ MSRP": int(row_curr["MSRP"] - matched_row_prev["MSRP"])
             }
             
             for col in payment_cols:
-                record[f"Δ {col}"] = int(row_curr[col] - row_prev[col])
+                record[f"Δ {col}"] = int(row_curr[col] - matched_row_prev[col])
                 
             delta_records.append(record)
             
@@ -222,9 +225,3 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
             
         st.dataframe(df_current_display)
         
-        # --- Section 2: Robust Delta Comparison View ---
-        if previous_file is not None:
-            st.markdown("---")
-            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
-            
-            df_prev_cleaned = clean_and_parse_file(previous_file)
