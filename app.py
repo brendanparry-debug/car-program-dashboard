@@ -152,7 +152,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
     return df_result
 
 def normalize_model_name(name_str):
-    """FIXED: Accurately isolates the core model string name from trailing year brackets"""
+    """FIXED: Correctly accesses index item [0] from split array before running string stripping functions"""
     name_clean = str(name_str).split('(')
     return name_clean[0].strip().lower()
 
@@ -223,4 +223,3 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
             df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
         else:
             df_current_filtered = df_current_calculated.copy()
-        
