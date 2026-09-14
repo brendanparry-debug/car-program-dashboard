@@ -7,6 +7,28 @@ st.set_page_config(page_title="Car Program Analytics Dashboard", layout="wide")
 st.title("🚗 Automotive Finance & Lease Program Dashboard")
 st.write("Upload your program files to calculate and compare dealer matrices on a single page.")
 
+# Define absolute standard letters mapping for columns A through R
+COLUMN_MAPPING = {
+    0: 'Car Model',
+    1: 'Trim',
+    2: 'MSRP',
+    3: 'Cash Discount',
+    4: 'Fin 24mo Rate',
+    5: 'Fin 36mo Rate',
+    6: 'Fin 48mo Rate',
+    7: 'Fin 60mo Rate',
+    8: 'Fin 72mo Rate',
+    9: 'Fin 84mo Rate',
+    10: 'Finance Discount',
+    11: 'Lease 36mo Rate',
+    12: 'Lease 48mo Rate',
+    13: 'Lease 60mo Rate',
+    14: 'Lease Discount',
+    15: 'Lease 36mo Residual',
+    16: 'Lease 48mo Residual',
+    17: 'Lease 60mo Residual'
+}
+
 # --- Calculation Functions ---
 def calculate_finance_payment(msrp, fin_discount, manual_discount, rate_pct, months):
     if months <= 0:
@@ -40,77 +62,39 @@ def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, res
     total_lease_payment = depreciation_charge + finance_charge
     return max(0.0, total_lease_payment)
 
-def find_column_by_keywords(columns, keywords):
-    """Finds a column name that contains all the specified keywords (case-insensitive)"""
-    for col in columns:
-        col_lower = str(col).lower()
-        if all(kw.lower() in col_lower for kw in keywords):
-            return col
-    return None
-
 def clean_and_parse_file(uploaded_file):
-    """Dynamically maps columns based on header text and applies safe type casting"""
+    """Safely extracts columns A through R and applies safe type casting"""
     try:
-        # Read the excel file normally to get headers
-        df_raw = pd.read_excel(uploaded_file)
+        df_raw = pd.read_excel(uploaded_file, header=None)
         
-        # Clean up column names to prevent matching issues with spaces
-        df_raw.columns = [str(c).strip() for c in df_raw.columns]
-        cols = df_raw.columns
-        
-        # Define dynamic mapping rules using keywords
-        mapping_rules = {
-            'Car Model': (['model'], 'Model'),
-            'Trim': (['trim'], 'Trim'),
-            'MSRP': (['msrp'], 'MSRP'),
-            'Cash Discount': (['cash', 'discount'], 'Cash Discount'),
-            'Finance Discount': (['finance', 'discount'], 'Finance Discount'),
-            'Lease Discount': (['lease', 'discount'], 'Lease Discount'),
-            'Fin 24mo Rate': (['24', 'finance', 'rate'], '24 month finance rate'),
-            'Fin 36mo Rate': (['36', 'finance', 'rate'], '36 month finance rate'),
-            'Fin 48mo Rate': (['48', 'finance', 'rate'], '48 month finance rate'),
-            'Fin 60mo Rate': (['60', 'finance', 'rate'], '60 month finance rate'),
-            'Fin 72mo Rate': (['72', 'finance', 'rate'], '72 month finance rate'),
-            'Fin 84mo Rate': (['84', 'finance', 'rate'], '84 month finance rate'),
-            'Lease 36mo Rate': (['36', 'lease', 'rate'], '36 month lease rate'),
-            'Lease 48mo Rate': (['48', 'lease', 'rate'], '48 month lease rate'),
-            'Lease 60mo Rate': (['60', 'lease', 'rate'], '60 month lease rate'),
-            'Lease 36mo Residual': (['36', 'lease', 'residual'], '36 month lease residual'),
-            'Lease 48mo Residual': (['48', 'lease', 'residual'], '48 month lease residual'),
-            'Lease 60mo Residual': (['60', 'lease', 'residual'], '60 month lease residual'),
-        }
-        
-        df_cleaned = pd.DataFrame()
-        missing_critical_cols = []
-        
-        # Build the new dataframe by looking up columns dynamically
-        for standard_name, (keywords, fallback) in mapping_rules.items():
-            matched_col = find_column_by_keywords(cols, keywords)
-            if matched_col:
-                df_cleaned[standard_name] = df_raw[matched_col]
-            else:
-                # If a rate or residual is missing entirely, we can safely fill it with zeros
-                if 'Rate' in standard_name or 'Residual' in standard_name or 'Discount' in standard_name:
-                    df_cleaned[standard_name] = 0.0
-                else:
-                    missing_critical_cols.append(fallback)
-                    
-        if missing_critical_cols:
-            st.error(f"❌ Uploaded file is missing required headers: {', '.join(missing_critical_cols)}")
+        if df_raw.shape[1] < 18:
+            st.error(f"❌ Uploaded file must have at least 18 columns (A through R). Found only {df_raw.shape[1]} columns.")
             return None
             
-        # Data scrubbing (Clean up string and numeric types)
-        df_cleaned['Car Model'] = df_cleaned['Car Model'].astype(str).str.strip()
-        df_cleaned['Trim'] = df_cleaned['Trim'].astype(str).str.strip()
+        df = df_raw.iloc[:, :18].copy()
+        df.columns = [COLUMN_MAPPING[i] for i in range(18)]
         
-        numeric_cols = [col for col in df_cleaned.columns if col not in ['Car Model', 'Trim']]
-        for col in numeric_cols:
-            df_cleaned[col] = df_cleaned[col].astype(str).str.replace('%', '', regex=False)
-            df_cleaned[col] = df_cleaned[col].astype(str).str.replace('$', '', regex=False)
-            df_cleaned[col] = df_cleaned[col].astype(str).str.replace(',', '', regex=False)
-            df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce').fillna(0.0)
+        first_row_val = str(df.iloc[0, 0]).strip().lower()
+        if "car" in first_row_val or "model" in first_row_val:
+            df = df.iloc[1:].reset_index(drop=True)
             
-        return df_cleaned
+        df['Car Model'] = df['Car Model'].astype(str).str.strip()
+        df['Trim'] = df['Trim'].astype(str).str.strip()
+        
+        numeric_cols = [
+            'MSRP', 'Cash Discount', 'Fin 24mo Rate', 'Fin 36mo Rate', 'Fin 48mo Rate', 
+            'Fin 60mo Rate', 'Fin 72mo Rate', 'Fin 84mo Rate', 'Finance Discount', 
+            'Lease 36mo Rate', 'Lease 48mo Rate', 'Lease 60mo Rate', 'Lease Discount', 
+            'Lease 36mo Residual', 'Lease 48mo Residual', 'Lease 60mo Residual'
+        ]
+        
+        for col in numeric_cols:
+            df[col] = df[col].astype(str).str.replace('%', '', regex=False)
+            df[col] = df[col].astype(str).str.replace('$', '', regex=False)
+            df[col] = df[col].astype(str).str.replace(',', '', regex=False)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            
+        return df
     except Exception as e:
         st.error(f"Error reading file structure: {e}")
         return None
@@ -156,6 +140,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
     return pd.DataFrame(processed_records)
 
 def compute_deltas(df_curr, df_prev, payment_cols):
+    """Safely handles delta computation in a flat structure isolated from UI code"""
     delta_df = pd.merge(df_curr, df_prev, on=["Car Model", "Trim"], suffixes=('_curr', '_prev'))
     if delta_df.empty:
         return pd.DataFrame()
@@ -205,5 +190,3 @@ if current_file is not None:
             df_current_display = df_current_filtered[mask]
         else:
             df_current_display = df_current_filtered.copy()
-            
-        st.dataframe(df_current_display)
