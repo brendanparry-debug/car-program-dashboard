@@ -155,11 +155,10 @@ def process_dataframe(df, manual_discount, is_biweekly):
     return df_result
 
 def normalize_text(text_val):
-    """FIXED: Harmonizes string records perfectly by stripping layout year brackets and matching inner spacing configurations"""
+    """Harmonizes string records perfectly by stripping layout year brackets and matching inner spacing configurations"""
     text = str(text_val).lower()
     for year in ["(2025)", "(2026)", "(2027)", "(2028)"]:
         text = text.replace(year, "")
-    # Combine double internal spaces into a clean single character width to force dataset matches
     return " ".join(text.split()).strip()
 
 def compute_deltas(df_curr, df_prev, payment_cols):
@@ -169,7 +168,6 @@ def compute_deltas(df_curr, df_prev, payment_cols):
     df_c = df_curr.copy()
     df_p = df_prev.copy()
     
-    # Apply powerful string alignment engines to clear out spacing anomalies completely
     df_c['match_model'] = df_c['Car Model'].apply(normalize_text)
     df_p['match_model'] = df_p['Car Model'].apply(normalize_text)
     df_c['match_trim'] = df_c['Trim'].apply(normalize_text)
@@ -218,7 +216,14 @@ if current_file is None:
 st.subheader("📊 Section 1: Current Program Analytics")
 df_current_cleaned = clean_and_parse_file(current_file)
 
-if df_current_cleaned is not None and not df_current_cleaned.empty:
-    df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
-    
-    if df_current_calculated is not None and not df_current_calculated.empty:
+if df_current_cleaned is None or df_current_cleaned.empty:
+    st.error("❌ Failed to parse data columns from your Current Month Excel file.")
+    st.stop()
+
+df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+
+if df_current_calculated is None or df_current_calculated.empty:
+    st.error("❌ Calculations returned empty rows.")
+    st.stop()
+
+# Dropdown list generation
