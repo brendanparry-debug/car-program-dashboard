@@ -143,7 +143,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
         
     df_result = pd.DataFrame(processed_records)
     
-    # Force all dollar amounts in Section 1 to whole numbers (integers)
+    # Force all dollar amounts to whole numbers (integers)
     cols_to_round = ["MSRP", "Cash Price (Net)", "Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
     for col in cols_to_round:
         if col in df_result.columns:
@@ -152,9 +152,11 @@ def process_dataframe(df, manual_discount, is_biweekly):
     return df_result
 
 def normalize_model_name(name_str):
-    """FIXED: Correctly accesses index item [0] from split array before running string stripping functions"""
-    name_clean = str(name_str).split('(')
-    return name_clean[0].strip().lower()
+    """FIXED: Uses a robust, error-free replacement mechanism to strip year layout strings safely"""
+    text = str(name_str).lower()
+    for year in ["(2025)", "(2026)", "(2027)", "(2028)"]:
+        text = text.replace(year, "")
+    return text.strip()
 
 def compute_deltas(df_curr, df_prev, payment_cols):
     if df_curr.empty or df_prev.empty:
@@ -222,4 +224,3 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         if selected_model != "All Models":
             df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
         else:
-            df_current_filtered = df_current_calculated.copy()
