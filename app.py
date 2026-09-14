@@ -125,7 +125,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
             "Cash Price (Net)": float(msrp - cash_discount),
             "Fin 24mo": float(f24 * factor), 
             "Fin 36mo": float(f36 * factor), 
-            "Fin 48mo": float(f48 * factor), 
+            "Fin 48mo": f48 * factor, 
             "Fin 60mo": float(f60 * factor), 
             "Fin 72mo": float(f72 * factor), 
             "Fin 84mo": float(f84 * factor),
@@ -154,60 +154,69 @@ previous_file = st.sidebar.file_uploader("Upload Previous Month Excel File", typ
 payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
 display_cols = ["MSRP", "Cash Price (Net)"] + payment_cols
 
-if current_file is not None:
-    st.subheader("📊 Section 1: Current Program Analytics")
-    df_current_cleaned = clean_and_parse_file(current_file)
+if current_file is None:
+    st.info("👋 Welcome! Please upload your program file to view calculated dealer matrices.")
+    st.stop()
+
+st.subheader("📊 Section 1: Current Program Analytics")
+df_current_cleaned = clean_and_parse_file(current_file)
+
+if df_current_cleaned is None or df_current_cleaned.empty:
+    st.error("❌ Failed to parse data from your Current file.")
+    st.stop()
+
+df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+
+unique_models = sorted(df_current_calculated["Car Model"].unique())
+dropdown_options = ["All Models"] + unique_models
+selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
+
+if selected_model != "All Models":
+    df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
+else:
+    df_current_filtered = df_current_calculated.copy()
     
-    if df_current_cleaned is not None and not df_current_cleaned.empty:
-        df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+if max_payment > 0:
+    mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
+    df_current_display = df_current_filtered[mask].copy()
+else:
+    df_current_display = df_current_filtered.copy()
+    
+df_s1_show = df_current_display.copy()
+for col in display_cols:
+    df_s1_show[col] = df_s1_show[col].round(0).astype(int)
+st.dataframe(df_s1_show)
+
+# --- Section 2: Unified Flattened Delta Comparison View ---
+if previous_file is not None:
+    st.markdown("---")
+    st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+    
+    df_prev_cleaned = clean_and_parse_file(previous_file)
+    df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
+    
+    if df_prev_calculated.empty:
+        st.error("❌ Failed to parse data from your Previous Month file.")
+        st.stop()
         
-        unique_models = sorted(df_current_calculated["Car Model"].unique())
-        dropdown_options = ["All Models"] + unique_models
-        selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
+    if selected_model != "All Models":
+        df_prev_filtered = df_prev_calculated[df_prev_calculated["Car Model"] == selected_model]
+    else:
+        df_prev_filtered = df_prev_calculated.copy()
         
-        if selected_model != "All Models":
-            df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
-        else:
-            df_current_filtered = df_current_calculated.copy()
-            
-        if max_payment > 0:
-            mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
-            df_current_display = df_current_filtered[mask].copy()
-        else:
-            df_current_display = df_current_filtered.copy()
-            
-        # Cleanly display Section 1 numbers rounded to the nearest whole integer
-        df_s1_show = df_current_display.copy()
-        for col in display_cols:
-            df_s1_show[col] = df_s1_show[col].round(0).astype(int)
-        st.dataframe(df_s1_show)
+    # Perform clean dynamic relational dataset merge
+    df_deltas = pd.merge(df_current_filtered, df_prev_filtered, on=["Car Model", "Trim"], suffixes=('_curr', '_prev'))
+    
+    if df_deltas.empty:
+        st.warning("⚠️ No exact matching variants found between sheets to generate comparison matrices.")
+    else:
+        df_deltas_display = pd.DataFrame()
+        df_deltas_display["Car Model"] = df_deltas["Car Model"]
+        df_deltas_display["Trim"] = df_deltas["Trim"]
+        df_deltas_display["Δ MSRP"] = (df_deltas["MSRP_curr"] - df_deltas["MSRP_prev"]).round(0).astype(int)
         
-        # --- Section 2: Re-Engineered Comparison View ---
-        if previous_file is not None:
-            st.markdown("---")
-            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+        for col in payment_cols:
+            df_deltas_display[f"Δ {col}"] = (df_deltas[f"{col}_curr"] - df_deltas[f"{col}_prev"]).round(0).astype(int)
             
-            df_prev_cleaned = clean_and_parse_file(previous_file)
-            df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
-            
-            if not df_prev_calculated.empty:
-                if selected_model != "All Models":
-                    df_prev_filtered = df_prev_calculated[df_prev_calculated["Car Model"] == selected_model]
-                else:
-                    df_prev_filtered = df_prev_calculated.copy()
-                
-                # FIXED CRASH: Perform standard merge join mapping without slicing array lengths
-                df_deltas = pd.merge(df_current_filtered, df_prev_filtered, on=["Car Model", "Trim"], suffixes=('_curr', '_prev'))
-                
-                if not df_deltas.empty:
-                    df_deltas_display = pd.DataFrame()
-                    df_deltas_display["Car Model"] = delta_df = df_deltas["Car Model"]
-                    df_deltas_display["Trim"] = df_deltas["Trim"]
-                    df_deltas_display["Δ MSRP"] = (df_deltas["MSRP_curr"] - df_deltas["MSRP_prev"]).round(0).astype(int)
-                    
-                    for col in payment_cols:
-                        df_deltas_display[f"Δ {col}"] = (df_deltas[f"{col}_curr"] - df_deltas[f"{col}_prev"]).round(0).astype(int)
-                        
-                    st.write("Showing variance differences (**Current Month** minus **Previous Month**):")
-                    st.dataframe(df_deltas_display)
-                else:
+        st.write("Showing variance differences (**Current Month** minus **Previous Month**):")
+        st.dataframe(df_deltas_display)
