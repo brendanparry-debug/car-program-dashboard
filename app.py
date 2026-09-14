@@ -74,7 +74,7 @@ def clean_and_parse_file(uploaded_file):
         df = df_raw.iloc[:, :18].copy()
         df.columns = [COLUMN_MAPPING[i] for i in range(18)]
         
-        # FIXED: Correctly grab the actual cell value from row 0, column 0
+        # FIXED: Correctly grab the actual cell value from row 0, column 0 safely
         if len(df) > 0:
             first_row_val = str(df.iloc[0, 0]).strip().lower()
             if "car" in first_row_val or "model" in first_row_val:
@@ -184,7 +184,6 @@ if current_file is not None:
     if df_current_cleaned is not None and not df_current_cleaned.empty:
         df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
         
-        # SAFETY CHECK: Ensure dataframe was actually generated
         if df_current_calculated is not None and not df_current_calculated.empty:
             unique_models = sorted(df_current_calculated["Car Model"].unique())
             dropdown_options = ["All Models"] + unique_models
@@ -224,3 +223,5 @@ if current_file is not None:
                             st.write("Showing differences (**Current Month** minus **Previous Month**):")
                             st.dataframe(df_deltas_filtered)
                         else:
+                            st.warning("⚠️ No matching Car Models and Trims found between both sheets to perform a comparison.")
+        else:
