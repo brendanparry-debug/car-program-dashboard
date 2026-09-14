@@ -152,10 +152,11 @@ def compute_deltas(df_curr, df_prev, payment_cols):
     df_c = df_curr.copy()
     df_p = df_prev.copy()
     
-    # NATIVE FIX: Use regular pandas text stripping rules to clear years and hidden spacing variables safely
-    for dataframe in [df_c, df_p]:
-        dataframe['key_model'] = dataframe['Car Model'].astype(str).str.lower().str.replace(r'\(202[0-9]\)', '', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
-        dataframe['key_trim'] = dataframe['Trim'].astype(str).str.lower().str.replace(r'\s+', ' ', regex=True).str.strip()
+    # Simple, non-destructive exact name join matching rules
+    df_c['key_model'] = df_c['Car Model'].astype(str).str.strip()
+    df_p['key_model'] = df_p['Car Model'].astype(str).str.strip()
+    df_c['key_trim'] = df_c['Trim'].astype(str).str.strip()
+    df_p['key_trim'] = df_p['Trim'].astype(str).str.strip()
     
     delta_df = pd.merge(df_c, df_p, on=["key_model", "key_trim"], suffixes=('_curr', '_prev'))
     if delta_df.empty:
@@ -207,6 +208,7 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         dropdown_options = ["All Models"] + unique_models
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
         
+        # Apply drop-down filtering safely to the base datasets
         if selected_model != "All Models":
             df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
         else:
@@ -220,6 +222,8 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
             
         st.dataframe(df_current_display)
         
-        # --- Section 2: Delta Comparison View ---
+        # --- Section 2 Execution Block ---
         if previous_file is not None:
             st.markdown("---")
+            st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+            
