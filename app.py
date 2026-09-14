@@ -67,7 +67,7 @@ def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, res
     return max(0.0, total_lease_payment)
 
 def clean_and_parse_file(uploaded_file):
-    """Dynamically maps columns based on clean textual header matching rules with decimal normalization"""
+    """Dynamically maps columns based on clean textual header matching rules with row-by-row cell normalization"""
     try:
         df_raw = pd.read_excel(uploaded_file)
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
@@ -83,7 +83,7 @@ def clean_and_parse_file(uploaded_file):
         df_cleaned['Car Model'] = df_cleaned['Car Model'].astype(str).str.strip()
         df_cleaned['Trim'] = df_cleaned['Trim'].astype(str).str.strip()
         
-        # Sanitize financial characters
+        # Sanitize financial characters cell by cell
         numeric_cols = [col for col in df_cleaned.columns if col not in ['Car Model', 'Trim']]
         for col in numeric_cols:
             df_cleaned[col] = df_cleaned[col].astype(str).str.replace('%', '', regex=False)
@@ -91,10 +91,9 @@ def clean_and_parse_file(uploaded_file):
             df_cleaned[col] = df_cleaned[col].astype(str).str.replace(',', '', regex=False)
             df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce').fillna(0.0)
             
-            # AUTO-NORMALIZATION: If the file used decimals like 0.0399 or 0.57 instead of 3.99 or 57, scale them to matching format
+            # FIXED: Row-by-row single cell validation. If an individual cell is a decimal (e.g. 0.0499), convert it to whole percentage (4.99)
             if 'Rate' in col or 'Residual' in col:
-                if df_cleaned[col].max() > 0 and df_cleaned[col].max() <= 1.0:
-                    df_cleaned[col] = df_cleaned[col] * 100.0
+                df_cleaned[col] = df_cleaned[col].apply(lambda x: x * 100.0 if (0.0 < x <= 1.0) else x)
             
         return df_cleaned
     except Exception as e:
@@ -106,6 +105,7 @@ def process_dataframe(df, manual_discount, is_biweekly):
         return pd.DataFrame()
         
     processed_records = []
+    # Retained your precise business logic calculation: (Monthly * 12) / 26
     factor = (12.0 / 26.0) if is_biweekly else 1.0
     
     for _, row in df.iterrows():
@@ -221,5 +221,3 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
                         if selected_model != "All Models":
                             df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
                         else:
-                            df_deltas_filtered = df_deltas.copy()
-                        
