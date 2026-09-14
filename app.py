@@ -74,9 +74,8 @@ def clean_and_parse_file(uploaded_file):
         df = df_raw.iloc[:, :18].copy()
         df.columns = [COLUMN_MAPPING[i] for i in range(18)]
         
-        # FIXED: Look directly at row 0, column 0 cell value safely without invoking iloc string objects
-        if not df.empty:
-            first_cell_value = str(df.iat[0, 0]).strip().lower()
+        if len(df) > 0:
+            first_cell_value = str(df.iloc[0, 0]).strip().lower()
             if "car" in first_cell_value or "model" in first_cell_value:
                 df = df.iloc[1:].reset_index(drop=True)
             
@@ -177,51 +176,62 @@ previous_file = st.sidebar.file_uploader("Upload Previous Month Excel File", typ
 # --- Main Page Execution ---
 payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
 
-if current_file is not None:
-    st.subheader("📊 Section 1: Current Program Analytics")
-    df_current_cleaned = clean_and_parse_file(current_file)
+# Stop execution if current month file is missing
+if current_file is None:
+    st.info("👋 Welcome! Please upload your Current Month Excel file to begin.")
+    st.stop()
+
+st.subheader("📊 Section 1: Current Program Analytics")
+df_current_cleaned = clean_and_parse_file(current_file)
+
+if df_current_cleaned is None or df_current_cleaned.empty:
+    st.error("❌ Failed to parse data columns from your Current Month Excel file.")
+    st.stop()
+
+df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+
+if df_current_calculated is None or df_current_calculated.empty:
+    st.error("❌ Calculations returned empty rows. Check data integrity inside your file columns.")
+    st.stop()
+
+# Build top filtering drop-down elements
+unique_models = sorted(df_current_calculated["Car Model"].unique())
+dropdown_options = ["All Models"] + unique_models
+selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
+
+if selected_model != "All Models":
+    df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
+else:
+    df_current_filtered = df_current_calculated.copy()
+
+if max_payment > 0:
+    mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
+    df_current_display = df_current_filtered[mask]
+else:
+    df_current_display = df_current_filtered.copy()
     
-    if df_current_cleaned is not None and not df_current_cleaned.empty:
-        df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+st.dataframe(df_current_display)
+
+# --- Section 2: Flat Comparison Execution Block ---
+if previous_file is not None:
+    st.markdown("---")
+    st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
+    
+    df_prev_cleaned = clean_and_parse_file(previous_file)
+    
+    if df_prev_cleaned is not None and not df_prev_cleaned.empty:
+        df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
         
-        if df_current_calculated is not None and not df_current_calculated.empty:
-            unique_models = sorted(df_current_calculated["Car Model"].unique())
-            dropdown_options = ["All Models"] + unique_models
-            selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
+        if not df_prev_calculated.empty:
+            df_deltas = compute_deltas(df_current_calculated, df_prev_calculated, payment_cols)
             
-            if selected_model != "All Models":
-                df_current_filtered = df_current_calculated[df_current_calculated["Car Model"] == selected_model]
-            else:
-                df_current_filtered = df_current_calculated.copy()
-            
-            if max_payment > 0:
-                mask = df_current_filtered[payment_cols].le(max_payment).any(axis=1)
-                df_current_display = df_current_filtered[mask]
-            else:
-                df_current_display = df_current_filtered.copy()
-                
-            st.dataframe(df_current_display)
-            
-            # --- Section 2: Comparison View ---
-            if previous_file is not None:
-                st.markdown("---")
-                st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
-                
-                df_prev_cleaned = clean_and_parse_file(previous_file)
-                if df_prev_cleaned is not None and not df_prev_cleaned.empty:
-                    df_prev_calculated = process_dataframe(df_prev_cleaned, manual_discount, is_biweekly)
+            if not df_deltas.empty:
+                if selected_model != "All Models":
+                    df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
+                else:
+                    df_deltas_filtered = df_deltas.copy()
                     
-                    if not df_prev_calculated.empty:
-                        df_deltas = compute_deltas(df_current_calculated, df_prev_calculated, payment_cols)
-                        
-                        if not df_deltas.empty:
-                            if selected_model != "All Models":
-                                df_deltas_filtered = df_deltas[df_deltas["Car Model"] == selected_model]
-                            else:
-                                df_deltas_filtered = df_deltas.copy()
-                                
-                            st.write("Showing differences (**Current Month** minus **Previous Month**):")
-                            st.dataframe(df_deltas_filtered)
-                        else:
-                            st.warning("⚠️ No matching Car Models and Trims found between both sheets to perform a comparison.")
-        else:
+                st.write("Showing differences (**Current Month** minus **Previous Month**):")
+                st.dataframe(df_deltas_filtered)
+            else:
+                st.warning("⚠️ No matching Car Models and Trims found between both sheets to perform a comparison.")
