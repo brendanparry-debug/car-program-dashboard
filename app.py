@@ -42,7 +42,7 @@ def calculate_finance_payment(msrp, fin_discount, manual_discount, rate_pct, mon
         return net_finance_amt / months
     
     payment = net_finance_amt * (monthly_rate * (1 + monthly_rate) ** months) / (((1 + monthly_rate) ** months) - 1)
-    return max(0.0, payment)
+    return float(payment)
 
 def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, residual_pct, months):
     if months <= 0:
@@ -60,10 +60,9 @@ def calculate_lease_payment(msrp, lease_discount, manual_discount, rate_pct, res
     finance_charge = (net_cap_cost + residual_value) * money_factor
     
     total_lease_payment = depreciation_charge + finance_charge
-    return max(0.0, total_lease_payment)
+    return float(total_lease_payment)
 
 def clean_and_parse_file(uploaded_file):
-    """Dynamically maps columns based on clean textual header matching rules with cell normalization"""
     try:
         df_raw = pd.read_excel(uploaded_file)
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
@@ -122,29 +121,21 @@ def process_dataframe(df, manual_discount, is_biweekly):
         record = {
             "Car Model": row['Car Model'],
             "Trim": row['Trim'],
-            "MSRP": msrp,
-            "Cash Price (Net)": msrp - cash_discount,
-            "Fin 24mo": f24 * factor, 
-            "Fin 36mo": f36 * factor, 
-            "Fin 48mo": f48 * factor, 
-            "Fin 60mo": f60 * factor, 
-            "Fin 72mo": f72 * factor, 
-            "Fin 84mo": f84 * factor,
-            "Lease 36mo": l36 * factor, 
-            "Lease 48mo": l48 * factor, 
-            "Lease 60mo": l60 * factor
+            "MSRP": float(msrp),
+            "Cash Price (Net)": float(msrp - cash_discount),
+            "Fin 24mo": float(f24 * factor), 
+            "Fin 36mo": float(f36 * factor), 
+            "Fin 48mo": float(f48 * factor), 
+            "Fin 60mo": float(f60 * factor), 
+            "Fin 72mo": float(f72 * factor), 
+            "Fin 84mo": float(f84 * factor),
+            "Lease 36mo": float(l36 * factor), 
+            "Lease 48mo": float(l48 * factor), 
+            "Lease 60mo": float(l60 * factor)
         }
         processed_records.append(record)
         
-    df_result = pd.DataFrame(processed_records)
-    
-    # Ensure all columns are regular float decimals during processing to prevent cast crashes
-    cols_to_convert = ["MSRP", "Cash Price (Net)", "Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
-    for col in cols_to_convert:
-        if col in df_result.columns:
-            df_result[col] = pd.to_numeric(df_result[col], errors='coerce').fillna(0.0)
-            
-    return df_result
+    return pd.DataFrame(processed_records)
 
 # --- Sidebar Controls ---
 st.sidebar.header("🎛️ Dashboard Controls")
@@ -161,18 +152,15 @@ previous_file = st.sidebar.file_uploader("Upload Previous Month Excel File", typ
 
 # --- Main Page Execution ---
 payment_cols = ["Fin 24mo", "Fin 36mo", "Fin 48mo", "Fin 60mo", "Fin 72mo", "Fin 84mo", "Lease 36mo", "Lease 48mo", "Lease 60mo"]
+display_cols = ["MSRP", "Cash Price (Net)"] + payment_cols
 
-if current_file is None:
-    st.info("👋 Welcome! Please upload your program file to view calculated dealer matrices.")
-    st.stop()
-
-st.subheader("📊 Section 1: Current Program Analytics")
-df_current_cleaned = clean_and_parse_file(current_file)
-
-if df_current_cleaned is not None and not df_current_cleaned.empty:
-    df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+if current_file is not None:
+    st.subheader("📊 Section 1: Current Program Analytics")
+    df_current_cleaned = clean_and_parse_file(current_file)
     
-    if df_current_calculated is not None and not df_current_calculated.empty:
+    if df_current_cleaned is not None and not df_current_cleaned.empty:
+        df_current_calculated = process_dataframe(df_current_cleaned, manual_discount, is_biweekly)
+        
         unique_models = sorted(df_current_calculated["Car Model"].unique())
         dropdown_options = ["All Models"] + unique_models
         selected_model = st.selectbox("🎯 Filter by Car Model:", dropdown_options, index=0)
@@ -188,14 +176,13 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
         else:
             df_current_display = df_current_filtered.copy()
             
-        # Display Section 1 rounded cleanly to the user
-        df_display_rounded = df_current_display.copy()
-        for col in ["MSRP", "Cash Price (Net)"] + payment_cols:
-            df_display_rounded[col] = df_display_rounded[col].round(0).astype(int)
-            
-        st.dataframe(df_display_rounded)
+        # Cleanly display Section 1 numbers rounded to the nearest whole integer
+        df_s1_show = df_current_display.copy()
+        for col in display_cols:
+            df_s1_show[col] = df_s1_show[col].round(0).astype(int)
+        st.dataframe(df_s1_show)
         
-        # --- Section 2: Re-Engineered Bulletproof Delta Comparison View ---
+        # --- Section 2: Re-Engineered Comparison View ---
         if previous_file is not None:
             st.markdown("---")
             st.subheader("🔄 Section 2: Program vs Prior Month Comparison Deltas")
@@ -209,7 +196,18 @@ if df_current_cleaned is not None and not df_current_cleaned.empty:
                 else:
                     df_prev_filtered = df_prev_calculated.copy()
                 
-                # CRASH FIX: Align rows strictly by their sorted position index to bypass text variations safely
-                df_curr_match = df_current_filtered.sort_values(by=["Trim"]).reset_index(drop=True)
-                df_prev_match = df_prev_filtered.sort_values(by=["Trim"]).reset_index(drop=True)
+                # FIXED CRASH: Perform standard merge join mapping without slicing array lengths
+                df_deltas = pd.merge(df_current_filtered, df_prev_filtered, on=["Car Model", "Trim"], suffixes=('_curr', '_prev'))
                 
+                if not df_deltas.empty:
+                    df_deltas_display = pd.DataFrame()
+                    df_deltas_display["Car Model"] = delta_df = df_deltas["Car Model"]
+                    df_deltas_display["Trim"] = df_deltas["Trim"]
+                    df_deltas_display["Δ MSRP"] = (df_deltas["MSRP_curr"] - df_deltas["MSRP_prev"]).round(0).astype(int)
+                    
+                    for col in payment_cols:
+                        df_deltas_display[f"Δ {col}"] = (df_deltas[f"{col}_curr"] - df_deltas[f"{col}_prev"]).round(0).astype(int)
+                        
+                    st.write("Showing variance differences (**Current Month** minus **Previous Month**):")
+                    st.dataframe(df_deltas_display)
+                else:
